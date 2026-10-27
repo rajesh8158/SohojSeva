@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin Login - Sohoj Seva</title>
+  <style>
+    body{background:#f9fafc;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0} 
+    .login-box{background:#fff;padding:36px 28px;border-radius:12px;box-shadow:0 2px 16px #c3d2e9cc;min-width:260px;} 
+    h2{margin-top:0;} 
+    input,button{padding:10px;margin:8px 0;width:100%;box-sizing:border-box;font-size:16px;}
+    button{background:#006b61;color:#fff;border:none;border-radius:5px;cursor:pointer;}
+    .error{color:#c21f1f;margin-bottom:12px;}
+  </style>
+</head>
+<body>
+  <form class="login-box" method="post" action="/admin/login">
+    <h2>Superadmin Login</h2>
+    <input type="text" name="username" placeholder="Username" required maxlength="32">
+    <input type="password" name="password" placeholder="Password" required maxlength="32">
+    <button type="submit">Login</button>
+    <!-- Error message is dynamically rendered server-side -->
+    {{error}}
+  </form>
+</body>
+</html>

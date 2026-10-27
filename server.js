@@ -45,13 +45,27 @@ app.use(express.json({ limit: '30kb' }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 function esc(s='') { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function getAdminBasicCreds() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'src', 'config', 'admin-basic.json'), 'utf8'));
+    return {
+      username: cfg.username || 'admin',
+      password: cfg.password || 'admin123'
+    };
+  } catch {
+    return { username: 'admin', password: 'admin123' };
+  }
+}
+
 function adminAuth(req,res,next) {
+ const { username, password } = getAdminBasicCreds();
  const header = req.headers.authorization || '';
  if (header.startsWith('Basic ')) {
   const [user, ...pass] = Buffer.from(header.slice(6), 'base64').toString().split(':');
-  if (user === (process.env.ADMIN_USER || 'admin') && pass.join(':') === (process.env.ADMIN_PASSWORD || '')) return next();
+  if (user === username && pass.join(':') === password) return next();
  }
- res.set('WWW-Authenticate', 'Basic realm="Sohoj Seva Admin"'); return res.status(401).send('Admin login required. Configure ADMIN_USER and ADMIN_PASSWORD in .env.');
+ res.set('WWW-Authenticate', 'Basic realm="Sohoj Seva Admin"');
+ return res.status(401).send('Admin login required.');
 }
 function makeRef(service) {
  const p = ({'flight':'TRV','train':'TRN','hospital':'HSP','visa':'VSA'})[service] || 'GEN';
@@ -61,11 +75,30 @@ app.get('/health', (req,res) => res.json({ ok:true, service:'sohoj-seva', time:n
 app.get('/api/public-info', (req,res) => res.json({ guestCount:count(), siteName:process.env.SITE_NAME || 'সহজযাত্রা' }));
 app.get('/api/reviews', (req,res) => res.json(db.prepare("SELECT id,name,language,rating,message,created_at FROM reviews WHERE status='approved' ORDER BY id DESC LIMIT 20").all()));
 app.post('/api/requests', (req,res) => {
- const b=req.body; const required=['name','phone','address','service','message'];
- if (required.some(k => !String(b[k]||'').trim())) return res.status(400).json({error:'নাম, ফোন, ঠিকানা, সেবা ও বার্তা পূরণ করুন।'});
- if (String(b.name).length>100 || String(b.phone).length>30 || String(b.address).length>500 || String(b.message).length>2000) return res.status(400).json({error:'কিছু তথ্য নির্ধারিত সীমার চেয়ে বড়।'});
+ const b=req.body;
+ const required=['name','phone','service'];
+ if (required.some(k => !String(b[k]||'').trim())) return res.status(400).json({error:'নাম, ফোন ও সেবা পূরণ করুন।'});
+
+ // Phone validation: must be exactly 10 digits (India-style). Allow spaces/+ etc but validate digits.
+ const digits=String(b.phone||'').replace(/\D/g,'');
+ if (digits.length !== 10) return res.status(400).json({error:'ফোন নম্বর অবশ্যই ১০ ডিজিট হতে হবে।'});
+
+ if (String(b.name).length>100) return res.status(400).json({error:'কিছু তথ্য নির্ধারিত সীমার চেয়ে বড়।'});
  const ref=makeRef(b.service);
- db.prepare(`INSERT INTO requests(ref,name,phone,address,arrival_date,drop_date,service,message,contact_method) VALUES(?,?,?,?,?,?,?,?,?)`).run(ref,String(b.name).trim(),String(b.phone).trim(),String(b.address).trim(),b.arrival_date||'',b.drop_date||'',String(b.service),String(b.message).trim(),b.contact_method==='whatsapp'?'whatsapp':'website');
+ // Keep schema unchanged; address is removed from UI, but message is optional and should be saved.
+ const msg = String(b.message || '').trim();
+ if (msg.length > 2000) return res.status(400).json({error:'কিছু তথ্য নির্ধারিত সীমার চেয়ে বড়।'});
+ db.prepare(`INSERT INTO requests(ref,name,phone,address,arrival_date,drop_date,service,message,contact_method) VALUES(?,?,?,?,?,?,?,?,?)`).run(
+  ref,
+  String(b.name).trim(),
+  digits,
+  '',
+  b.arrival_date||'',
+  b.drop_date||'',
+  String(b.service),
+  msg,
+  'website'
+ );
  res.status(201).json({ok:true,ref,message:'আপনার অনুরোধ জমা হয়েছে। অপারেটর সাধারণত ১৫ মিনিটের মধ্যে যোগাযোগ করবেন।'});
 });
 app.post('/api/reviews', (req,res) => {
